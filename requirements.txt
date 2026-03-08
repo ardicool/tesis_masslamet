@@ -5,5 +5,5 @@ joblib
 scikit-learn
 xgboost
 scipy
-streamlit_gsheets
+st-gsheets-connection
 openai
