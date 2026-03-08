@@ -526,6 +526,10 @@ target = st.number_input(
 if st.button("Generate Recommendation"):
 
     last_row = step1.iloc[-1]
+    # ambil timestamp
+    time_col = step1.columns[0]
+    data_time = last_row[time_col]
+    data_time_str = pd.to_datetime(data_time).strftime("%Y-%m-%d %H:%M")
 
     rec = prescribe_control(
         last_row,
@@ -537,6 +541,8 @@ if st.button("Generate Recommendation"):
     )
 
     st.success("Recommendation generated")
+
+    st.metric("Data Timestamp", data_time_str)
 
     st.dataframe(rec, use_container_width=True)
 
