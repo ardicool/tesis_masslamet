@@ -4,3 +4,6 @@ numpy
 joblib
 scikit-learn
 xgboost
+scipy
+streamlit_gsheets
+openai
