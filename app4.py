@@ -334,6 +334,12 @@ Explain:
 1. What process changes are recommended
 2. Why these changes reduce or increase FCaOX
 3. A simple instruction list for the kiln operator
+4. Following point need to be explained
+    "Torsi Motor Kiln" is torque of the kiln motor, higher torque can indicate higher load on the kiln which can affect the reduction process and thus FCaOX levels.
+    "Arus Motor Kiln" is current of the kiln motor, which can also indicate load and energy input to the kiln, influencing the chemical reactions and FCaOX.
+    "Nox IKGA" is the nitrogen oxide level in the kiln gas, which can affect the combustion efficiency and FCaOX levels.
+    "Suhu Calciner" is the temperature in the calciner, which affects the decomposition of calcium carbonate and FCaOX levels.
+    "LSF" is the Lime Saturation Factor, which indicates the amount of lime available for reaction and affects FCaOX levels.
 
 Keep explanation concise and technical.
 """
