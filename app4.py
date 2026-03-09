@@ -171,6 +171,52 @@ def run_rolling_window(df_raw, pre):
 
 
 # ============================================================
+# FCAOX STATUS HELPER
+# ============================================================
+def get_fcaox_status(value):
+    """Return (label, color_hex, emoji) based on FCaOX value."""
+    if value is None or np.isnan(value):
+        return "N/A", "#888888", "❓"
+    if value < 0.6:
+        return "OVERBURN", "#FF6B35", "🔶"
+    elif value <= 1.5:
+        return "NORMAL", "#2ECC71", "✅"
+    else:
+        return "HIGH FCaOX", "#E74C3C", "🔴"
+
+
+def render_fcaox_card(label, value, status_label, color, emoji):
+    """Render a styled FCaOX status card using st.markdown."""
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, {color}22, {color}11);
+            border: 2px solid {color};
+            border-radius: 16px;
+            padding: 24px 20px;
+            text-align: center;
+            box-shadow: 0 4px 20px {color}33;
+        ">
+            <div style="font-size: 13px; color: #aaa; font-weight: 600;
+                        letter-spacing: 1.5px; text-transform: uppercase;
+                        margin-bottom: 8px;">
+                {label}
+            </div>
+            <div style="font-size: 52px; font-weight: 800;
+                        color: {color}; line-height: 1; margin-bottom: 8px;">
+                {round(value, 3) if value is not None and not np.isnan(value) else "—"}
+            </div>
+            <div style="font-size: 18px; font-weight: 700;
+                        color: {color}; letter-spacing: 1px;">
+                {emoji} {status_label}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
 # UI HEADER
 # ============================================================
 st.title("🔥 Kiln FCaOX Prediction System")
@@ -194,58 +240,124 @@ with st.expander("Dtype Check"):
 #fungsi preskriptif
 def prescribe_control(last_row, scaler, scale_cols, model_inc, model_abs, target):
 
-    # validasi lag FCaOX
-    #if pd.isna(last_row["FCaOX"]):
-     #   raise ValueError("FCaOX terakhir masih NaN. Prescriptive tidak dapat dijalankan.")
+    process_vars = scale_cols.copy()
 
-    #current_fcaox = last_row["FCaOX"]
-    # ambil FCaOX aktual terakhir yang tersedia
-    current_fcaox = step1["FCaOX"].dropna().iloc[-1]
+    # state awal
+    X0 = last_row[process_vars].values.astype(float)
 
-    X0 = last_row[scale_cols].values.astype(float)
+    bounds = []
 
-    # isi NaN feature dengan 0
-    X0 = np.nan_to_num(X0)
+    for var, val in zip(process_vars, X0):
+
+        if var == "LSF":
+            bounds.append((val, val))  # dikunci
+
+        elif "Torsi Motor Kiln" in var:
+            low = val * 0.95
+            high = val * 1.05
+            bounds.append((min(low, high), max(low, high)))
+
+        elif "Arus Motor Kiln" in var:
+            low = val * 0.95
+            high = val * 1.05
+            bounds.append((min(low, high), max(low, high)))
+
+        elif "Nox IKGA" in var:
+            low = val * 0.90
+            high = val * 1.10
+            bounds.append((min(low, high), max(low, high)))
+
+        elif "Suhu Calciner" in var:
+            low = val - 20
+            high = val + 20
+            bounds.append((min(low, high), max(low, high)))
+
+        else:
+            low = val * 0.95
+            high = val * 1.05
+            bounds.append((min(low, high), max(low, high)))
+
+    current_fcaox = last_row["FCaOX"]
 
     def objective(x):
 
-        X = pd.DataFrame([x], columns=scale_cols)
-
-        X = X.fillna(0)
+        X = pd.DataFrame([x], columns=process_vars)
 
         Xs = scaler.transform(X)
 
         inc_pred = model_inc.predict(Xs)[0]
-
-        if np.isnan(inc_pred):
-            return 999
 
         abs_input = pd.DataFrame([{
             "FCaOX_Inc_pred": inc_pred,
             "FCaOX_lag1": current_fcaox
         }])
 
-        if abs_input.isnull().values.any():
-            return 999
-
         pred = model_abs.predict(abs_input)[0]
 
-        return abs(pred - target)
+        return (pred - target)**2
 
     result = minimize(
         objective,
         X0,
-        method="Nelder-Mead"
+        method="Powell",
+        bounds=bounds
     )
 
-    recommended = result.x
+    rec = result.x
 
     rec_df = pd.DataFrame({
-        "Variable": scale_cols,
+        "Variable": process_vars,
         "Current": X0,
-        "Recommended": recommended,
-        "Delta": recommended - X0
+        "Recommended": rec,
+        "Delta": rec - X0
     })
+    last_actual_fcaox = step1["FCaOX"].dropna().iloc[-1]
+
+    # menentukan mode kontrol
+    if target > last_actual_fcaox:
+        mode = "increase"
+    else:
+        mode = "decrease"
+
+    last_actual_fcaox = step1["FCaOX"].dropna().iloc[-1]
+
+    if mode == "increase":
+
+        direction_rules = {
+        "Torsi Motor Kiln_diff_mean": -1,
+        "Arus Motor Kiln_diff_mean": -1,
+        "Nox IKGA_diff_mean": -1,
+        "Suhu Calciner_diff_mean": -1,
+        "LSF": 0
+    }
+
+    else:
+
+        direction_rules = {
+            "Torsi Motor Kiln_diff_mean": 1,
+            "Arus Motor Kiln_diff_mean": 1,
+            "Nox IKGA_diff_mean": 1,
+            "Suhu Calciner_diff_mean": 1,
+            "LSF": 0
+        }
+    for i, row in rec_df.iterrows():
+
+        var = row["Variable"]
+        delta = row["Delta"]
+
+        rule = direction_rules.get(var)
+
+        if rule == -1 and delta > 0:
+            rec_df.loc[i, "Recommended"] = row["Current"]
+            rec_df.loc[i, "Delta"] = 0
+
+        if rule == 1 and delta < 0:
+            rec_df.loc[i, "Recommended"] = row["Current"]
+            rec_df.loc[i, "Delta"] = 0
+
+        if rule == 0:
+            rec_df.loc[i, "Recommended"] = row["Current"]
+            rec_df.loc[i, "Delta"] = 0
 
     return rec_df
 
@@ -323,25 +435,23 @@ def explain_prescriptive(rec_df):
     table_text = rec_df.to_string(index=False)
 
     prompt = f"""
-You are a cement kiln process expert.
+Anda adalah seorang ahli proses tungku semen.
 
-Explain the following prescriptive recommendation for controlling FCaOX.
+Jelaskan rekomendasi preskriptif berikut untuk mengendalikan FCaOX.
 
 Table:
 {table_text}
 
-Explain:
-1. What process changes are recommended
-2. Why these changes reduce or increase FCaOX
-3. A simple instruction list for the kiln operator
-4. Following point need to be explained
-    "Torsi Motor Kiln" is torque of the kiln motor, higher torque can indicate higher load on the kiln which can affect the reduction process and thus FCaOX levels.
-    "Arus Motor Kiln" is current of the kiln motor, which can also indicate load and energy input to the kiln, influencing the chemical reactions and FCaOX.
-    "Nox IKGA" is the nitrogen oxide level in the kiln gas, which can affect the combustion efficiency and FCaOX levels.
-    "Suhu Calciner" is the temperature in the calciner, which affects the decomposition of calcium carbonate and FCaOX levels.
-    "LSF" is the Lime Saturation Factor, which indicates the amount of lime available for reaction and affects FCaOX levels.
+Penjelasan:
+pertimbangkan Delta Point, Delta point adalah Arus vs Rekomendasi, jika positif berarti rekomendasi lebih tinggi dari kondisi saat ini, jika negatif berarti rekomendasi lebih rendah dari kondisi saat ini.
+"Torsi Motor Kiln" adalah torsi motor kiln, torsi yang lebih tinggi dapat menunjukkan beban yang lebih tinggi pada kiln yang dapat memengaruhi proses reduksi dan dengan demikian tingkat FCaOX.
+"Arus Motor Kiln" adalah arus motor kiln, yang juga dapat menunjukkan beban dan masukan energi ke kiln, memengaruhi reaksi kimia dan FCaOX.
+"Nox IKGA" adalah tingkat nitrogen oksida dalam gas kiln, yang dapat memengaruhi efisiensi pembakaran dan tingkat FCaOX.
+"Suhu Calciner" adalah suhu di dalam kalsinator, yang memengaruhi dekomposisi kalsium karbonat dan tingkat FCaOX.
 
-Keep explanation concise and technical.
+"LSF" adalah Faktor Saturasi Kapur, yang menunjukkan jumlah kapur yang tersedia untuk reaksi dan memengaruhi tingkat FCaOX.
+
+Jaga agar penjelasan tetap ringkas dan teknis.
 """
 
     response = client.chat.completions.create(
@@ -407,7 +517,8 @@ col2.metric("Columns", len(step1.columns))
 col3.metric("FCaOX Inc valid", step1["FCaOX_Inc"].notna().sum())
 col4.metric("FCaOX valid", step1["FCaOX"].notna().sum())
 
-st.dataframe(step1.head(50), use_container_width=True)
+with st.expander("Preview Step-1 Data"):
+    st.dataframe(step1.head(50), use_container_width=True)
 
 st.download_button(
     "Download Step1 CSV",
@@ -495,17 +606,86 @@ if st.button("Re-Run Batch Prediction"):
 
     st.line_chart(result[["FCaOX_pred", "FCaOX_actual"]])
 
+    # --------------------------------------------------------
+    # FCaOX STATUS CARDS — setelah chart
+    # --------------------------------------------------------
+    st.subheader("📊 FCaOX Status Terkini")
+
+    last_actual_val = result["FCaOX_actual"].dropna().iloc[-1] if not result["FCaOX_actual"].dropna().empty else None
+    last_pred_val   = result["FCaOX_pred"].dropna().iloc[-1]   if not result["FCaOX_pred"].dropna().empty   else None
+
+    act_label, act_color, act_emoji = get_fcaox_status(last_actual_val)
+    pred_label, pred_color, pred_emoji = get_fcaox_status(last_pred_val)
+
+    card_col1, card_col2, card_col3 = st.columns([2, 2, 1])
+
+    with card_col1:
+        render_fcaox_card("FCaOX Sekarang (Aktual)", last_actual_val, act_label, act_color, act_emoji)
+
+    with card_col2:
+        render_fcaox_card("FCaOX Prediksi", last_pred_val, pred_label, pred_color, pred_emoji)
+
+    with card_col3:
+        st.markdown(
+            """
+            <div style="background:#1a1a2e; border-radius:12px; padding:16px;
+                        font-size:12px; color:#ccc; line-height:1.8;">
+                <b style="color:#fff;">Keterangan</b><br>
+                <span style="color:#2ECC71;">■</span> 0.6 – 1.5 : Normal<br>
+                <span style="color:#FF6B35;">■</span> &lt; 0.6 : Overburn<br>
+                <span style="color:#E74C3C;">■</span> &gt; 1.5 : FCaOX Tinggi
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    # --------------------------------------------------------
+
     st.download_button(
         "Download Prediction",
         result.to_csv(index=False),
         "prediction.csv"
     )
-else:
-    result = run_batch_prediction(step1)
 
-    st.dataframe(result)
+else:
+    result1 = run_batch_prediction(step1)
+    result = result1.sort_values("time", ascending=False).reset_index(drop=True)
+    st.dataframe(result, use_container_width=True, height=200)
 
     st.line_chart(result[["FCaOX_pred", "FCaOX_actual"]])
+
+    # --------------------------------------------------------
+    # FCaOX STATUS CARDS — setelah chart
+    # --------------------------------------------------------
+    st.subheader("📊 FCaOX Status Terkini")
+
+    last_actual_val = result["FCaOX_actual"].dropna().iloc[-1] if not result["FCaOX_actual"].dropna().empty else None
+    last_pred_val   = result["FCaOX_pred"].dropna().iloc[-1]   if not result["FCaOX_pred"].dropna().empty   else None
+
+    act_label, act_color, act_emoji = get_fcaox_status(last_actual_val)
+    pred_label, pred_color, pred_emoji = get_fcaox_status(last_pred_val)
+
+    card_col1, card_col2, card_col3 = st.columns([2, 2, 1])
+
+    with card_col1:
+        render_fcaox_card("FCaOX Sekarang (Aktual)", last_actual_val, act_label, act_color, act_emoji)
+
+    with card_col2:
+        render_fcaox_card("FCaOX Prediksi", last_pred_val, pred_label, pred_color, pred_emoji)
+
+    with card_col3:
+        st.markdown(
+            """
+            <div style="background:#1a1a2e; border-radius:12px; padding:16px;
+                        font-size:12px; color:#ccc; line-height:1.8;">
+                <b style="color:#fff;">Keterangan</b><br>
+                <span style="color:#2ECC71;">■</span> 0.6 – 1.5 : Normal<br>
+                <span style="color:#FF6B35;">■</span> &lt; 0.6 : Overburn<br>
+                <span style="color:#E74C3C;">■</span> &gt; 1.5 : FCaOX Tinggi
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    # --------------------------------------------------------
 
     st.download_button(
         "Download Prediction",
@@ -515,18 +695,26 @@ else:
 
 st.subheader("🧠 Prescriptive Control Recommendation")
 
-target = st.number_input(
-    "Target FCaOX",
-    min_value=0.0,
-    max_value=3.0,
-    value=1.5,
+last_actual_fcaox = step1["FCaOX"].dropna().iloc[-1]
+
+delta_target = st.number_input(
+    "Δ Target FCaOX (relative to last actual)",
+    min_value=-1.0,
+    max_value=1.0,
+    value=0.10,
     step=0.05
+)
+
+target = last_actual_fcaox + delta_target
+
+st.info(
+    f"Last Actual FCaOX : {round(last_actual_fcaox,3)} → Target FCaOX : {round(target,3)}"
 )
 
 if st.button("Generate Recommendation"):
 
     last_row = step1.iloc[-1]
-    # ambil timestamp
+
     time_col = step1.columns[0]
     data_time = last_row[time_col]
     data_time_str = pd.to_datetime(data_time).strftime("%Y-%m-%d %H:%M")
@@ -542,33 +730,14 @@ if st.button("Generate Recommendation"):
 
     st.success("Recommendation generated")
 
-    st.metric("Data Timestamp", data_time_str)
+    st.metric("Data Timestamp", str(data_time_str))
+    st.metric("Last Actual FCaOX", round(last_actual_fcaox,3))
+    st.metric("Target FCaOX", round(target,3))
 
     st.dataframe(rec, use_container_width=True)
-
-    alarm = []
-
-    for _, r in rec.iterrows():
-
-        if abs(r["Delta"]) > 0.05:
-
-            alarm.append(
-                f"{r['Variable']} adjust {round(r['Delta'],3)}"
-            )
-
-    if alarm:
-
-        st.warning("Recommended adjustments:")
-
-        for a in alarm:
-            st.write("-", a)
-
-        explanation = explain_prescriptive(rec)
-
-        st.subheader("AI Process Explanation")
-
-        st.write(explanation)
-
+    explanation = explain_prescriptive(rec)
+    st.subheader("AI Process Explanation")
+    st.write(explanation)
 
 
 if st.button("🔄 Refresh Page"):
