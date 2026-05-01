@@ -31,7 +31,7 @@ GSHEET_URL = "https://docs.google.com/spreadsheets/d/1WZcow7B0i8ZXXp7jai_D_tFA-e
 def load_kiln_sheet():
     conn = st.connection("gsheets", type=GSheetsConnection)
     data = conn.read(spreadsheet=GSHEET_URL)
-    df = pd.DataFrame(data)
+    df   = pd.DataFrame(data)
 
     df["Start Time"] = pd.to_datetime(df["Start Time"], errors="coerce")
 
@@ -53,8 +53,7 @@ def load_kiln_sheet():
         )
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df = df.sort_values("Start Time")
-    df = df.reset_index(drop=True)
+    df = df.sort_values("Start Time").reset_index(drop=True)
     return df
 
 
@@ -78,77 +77,71 @@ def compute_fcaox_inc(series):
 def run_rolling_window(df_raw, pre):
     df = df_raw.copy()
 
-    time_col = pre["time_col"]
+    time_col     = pre["time_col"]
     process_cols = pre["process_cols"]
-    lsf_col = pre["lsf_col"]
-    fcao_col = pre["fcao_col"]
+    lsf_col      = pre["lsf_col"]
+    fcao_col     = pre["fcao_col"]
     winsor_param = pre["winsor_param"]
-    lag_map = pre["lag_map"]
-    window_map = pre["window_map"]
+    lag_map      = pre["lag_map"]
+    window_map   = pre["window_map"]
 
     for col in process_cols:
         p1, p99 = winsor_param[col]
-        df[col] = df[col].clip(lower=p1, upper=p99)
+        df[col]  = df[col].clip(lower=p1, upper=p99)
 
-    df[lsf_col] = df[lsf_col].ffill()
+    df[lsf_col]     = df[lsf_col].ffill()
     df["FCaOX_Inc"] = compute_fcaox_inc(df[fcao_col])
 
-    rows = []
+    rows             = []
     last_quality_idx = None
-    last_mean_map = {}
+    last_mean_map    = {}
 
-    total = len(df)
-
-    for idx in range(total):
+    for idx in range(len(df)):
         diff_vals = {}
 
         for col in process_cols:
-            lag = lag_map.get(col, 0)
+            lag    = lag_map.get(col, 0)
             window = window_map.get(col, 1)
-            end = idx - lag
-            start = end - window + 1
+            end    = idx - lag
+            start  = end - window + 1
 
             if end < 0:
                 diff_vals[f"{col}_diff_mean"] = 0
                 continue
 
-            win = df.loc[max(0, start):end, col]
+            win    = df.loc[max(0, start):end, col]
             mean_T = win.mean()
-            diff = 0 if (last_quality_idx is None or col not in last_mean_map) else mean_T - last_mean_map[col]
+            diff   = 0 if (last_quality_idx is None or col not in last_mean_map) else mean_T - last_mean_map[col]
             diff_vals[f"{col}_diff_mean"] = diff
 
         if pd.notna(df.loc[idx, fcao_col]):
             last_quality_idx = idx
-            new_mean_map = {}
-
+            new_mean_map     = {}
             for col in process_cols:
-                lag = lag_map.get(col, 0)
-                window = window_map.get(col, 1)
-                end = idx - lag
-                start = end - window + 1
-
+                lag   = lag_map.get(col, 0)
+                win_  = window_map.get(col, 1)
+                end   = idx - lag
+                start = end - win_ + 1
                 if end < 0:
                     continue
-
                 new_mean_map[col] = df.loc[max(0, start):end, col].mean()
-
             last_mean_map = new_mean_map
 
         rows.append({
-            time_col: df.loc[idx, time_col],
+            time_col:    df.loc[idx, time_col],
             **diff_vals,
-            "LSF": df.loc[idx, lsf_col],
+            "LSF":       df.loc[idx, lsf_col],
             "FCaOX_Inc": df.loc[idx, "FCaOX_Inc"],
-            "FCaOX": df.loc[idx, fcao_col]
+            "FCaOX":     df.loc[idx, fcao_col]
         })
 
     final_df = pd.DataFrame(rows)
-    ordered = [time_col] + [f"{c}_diff_mean" for c in process_cols] + ["LSF", "FCaOX_Inc", "FCaOX"]
+    ordered  = [time_col] + [f"{c}_diff_mean" for c in process_cols] + ["LSF", "FCaOX_Inc", "FCaOX"]
     return final_df[[c for c in ordered if c in final_df.columns]]
 
 
 # ============================================================
-# FCAOX STATUS HELPER
+# FCAOX STATUS HELPERS
 # ============================================================
 def get_fcaox_status(value):
     if value is None or np.isnan(value):
@@ -172,17 +165,15 @@ def render_fcaox_card(label, value, status_label, color, emoji):
             text-align: center;
             box-shadow: 0 4px 20px {color}33;
         ">
-            <div style="font-size: 13px; color: #aaa; font-weight: 600;
-                        letter-spacing: 1.5px; text-transform: uppercase;
-                        margin-bottom: 8px;">
+            <div style="font-size:13px;color:#aaa;font-weight:600;
+                        letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">
                 {label}
             </div>
-            <div style="font-size: 52px; font-weight: 800;
-                        color: {color}; line-height: 1; margin-bottom: 8px;">
+            <div style="font-size:52px;font-weight:800;
+                        color:{color};line-height:1;margin-bottom:8px;">
                 {round(value, 3) if value is not None and not np.isnan(value) else "—"}
             </div>
-            <div style="font-size: 18px; font-weight: 700;
-                        color: {color}; letter-spacing: 1px;">
+            <div style="font-size:18px;font-weight:700;color:{color};letter-spacing:1px;">
                 {emoji} {status_label}
             </div>
         </div>
@@ -192,89 +183,67 @@ def render_fcaox_card(label, value, status_label, color, emoji):
 
 
 # ============================================================
-# PRESCRIPTIVE FUNCTIONS
+# PRESCRIPTIVE CONTROL
 # ============================================================
 def prescribe_control(last_row, scaler, scale_cols, model_inc, model_abs, target, step1):
-    process_vars = scale_cols.copy()
-    X0 = last_row[process_vars].values.astype(float)
+    process_vars  = scale_cols.copy()
+    X0            = last_row[process_vars].values.astype(float)
+    current_fcaox = last_row["FCaOX"]
 
     bounds = []
     for var, val in zip(process_vars, X0):
         if var == "LSF":
             bounds.append((val, val))
         elif "Torsi Motor Kiln" in var:
-            low, high = val * 0.95, val * 1.05
-            bounds.append((min(low, high), max(low, high)))
+            bounds.append((min(val * 0.95, val * 1.05), max(val * 0.95, val * 1.05)))
         elif "Arus Motor Kiln" in var:
-            low, high = val * 0.95, val * 1.05
-            bounds.append((min(low, high), max(low, high)))
+            bounds.append((min(val * 0.95, val * 1.05), max(val * 0.95, val * 1.05)))
         elif "Nox IKGA" in var:
-            low, high = val * 0.90, val * 1.10
-            bounds.append((min(low, high), max(low, high)))
+            bounds.append((min(val * 0.90, val * 1.10), max(val * 0.90, val * 1.10)))
         elif "Suhu Calciner" in var:
-            low, high = val - 20, val + 20
-            bounds.append((min(low, high), max(low, high)))
+            bounds.append((val - 20, val + 20))
         else:
-            low, high = val * 0.95, val * 1.05
-            bounds.append((min(low, high), max(low, high)))
-
-    current_fcaox = last_row["FCaOX"]
+            bounds.append((min(val * 0.95, val * 1.05), max(val * 0.95, val * 1.05)))
 
     def objective(x):
-        X = pd.DataFrame([x], columns=process_vars)
-        Xs = scaler.transform(X)
-        inc_pred = model_inc.predict(Xs)[0]
-        abs_input = pd.DataFrame([{
-            "FCaOX_Inc_pred": inc_pred,
-            "FCaOX_lag1": current_fcaox
-        }])
-        pred = model_abs.predict(abs_input)[0]
+        X         = pd.DataFrame([x], columns=process_vars)
+        Xs        = scaler.transform(X)
+        inc_pred  = model_inc.predict(Xs)[0]
+        abs_input = pd.DataFrame([{"FCaOX_Inc_pred": inc_pred, "FCaOX_lag1": current_fcaox}])
+        pred      = model_abs.predict(abs_input)[0]
         return (pred - target) ** 2
 
-    result = minimize(objective, X0, method="Powell", bounds=bounds)
-    rec = result.x
+    res = minimize(objective, X0, method="Powell", bounds=bounds)
+    rec = res.x
 
     rec_df = pd.DataFrame({
-        "Variable": process_vars,
-        "Current": X0,
+        "Variable":    process_vars,
+        "Current":     X0,
         "Recommended": rec,
-        "Delta": rec - X0
+        "Delta":       rec - X0
     })
 
     last_actual_fcaox = step1["FCaOX"].dropna().iloc[-1]
-    mode = "increase" if target > last_actual_fcaox else "decrease"
+    mode              = "increase" if target > last_actual_fcaox else "decrease"
 
-    if mode == "increase":
-        direction_rules = {
-            "Torsi Motor Kiln_diff_mean": -1,
-            "Arus Motor Kiln_diff_mean": -1,
-            "Nox IKGA_diff_mean": -1,
-            "Suhu Calciner_diff_mean": -1,
-            "LSF": 0
-        }
-    else:
-        direction_rules = {
-            "Torsi Motor Kiln_diff_mean": 1,
-            "Arus Motor Kiln_diff_mean": 1,
-            "Nox IKGA_diff_mean": 1,
-            "Suhu Calciner_diff_mean": 1,
-            "LSF": 0
-        }
+    direction_rules = {
+        "Torsi Motor Kiln_diff_mean": -1 if mode == "increase" else 1,
+        "Arus Motor Kiln_diff_mean":  -1 if mode == "increase" else 1,
+        "Nox IKGA_diff_mean":         -1 if mode == "increase" else 1,
+        "Suhu Calciner_diff_mean":    -1 if mode == "increase" else 1,
+        "LSF": 0
+    }
 
     for i, row in rec_df.iterrows():
-        var = row["Variable"]
+        var   = row["Variable"]
         delta = row["Delta"]
-        rule = direction_rules.get(var)
-
+        rule  = direction_rules.get(var)
         if rule == -1 and delta > 0:
-            rec_df.loc[i, "Recommended"] = row["Current"]
-            rec_df.loc[i, "Delta"] = 0
+            rec_df.loc[i, ["Recommended", "Delta"]] = [row["Current"], 0]
         if rule == 1 and delta < 0:
-            rec_df.loc[i, "Recommended"] = row["Current"]
-            rec_df.loc[i, "Delta"] = 0
+            rec_df.loc[i, ["Recommended", "Delta"]] = [row["Current"], 0]
         if rule == 0:
-            rec_df.loc[i, "Recommended"] = row["Current"]
-            rec_df.loc[i, "Delta"] = 0
+            rec_df.loc[i, ["Recommended", "Delta"]] = [row["Current"], 0]
 
     return rec_df
 
@@ -284,33 +253,28 @@ def explain_prescriptive(rec_df):
         base_url="https://api.llm7.io/v1",
         api_key=["1RRDNXKFj2nmyiNm0hGAH9nCu8UoGQ+5G0/qZ+7MFUiFupCiig7nzcE/O2fkmEoGK1bTOorNGssH/2zR71yYDDfYZq5DK366JeoMR+quDacy9PHITK8BFXuJBFnpG+bQSkjYlQ=="]
     )
-
     table_text = rec_df.to_string(index=False)
-
     prompt = f"""
 Anda adalah seorang ahli proses tungku semen.
-
 Jelaskan rekomendasi preskriptif berikut untuk mengendalikan FCaOX.
 
 Table:
 {table_text}
 
 Penjelasan:
-pertimbangkan Delta Point, Delta point adalah Arus vs Rekomendasi, jika positif berarti rekomendasi lebih tinggi dari kondisi saat ini, jika negatif berarti rekomendasi lebih rendah dari kondisi saat ini.
-"Torsi Motor Kiln" adalah torsi motor kiln, torsi yang lebih tinggi dapat menunjukkan beban yang lebih tinggi pada kiln yang dapat memengaruhi proses reduksi dan dengan demikian tingkat FCaOX.
-"Arus Motor Kiln" adalah arus motor kiln, yang juga dapat menunjukkan beban dan masukan energi ke kiln, memengaruhi reaksi kimia dan FCaOX.
-"Nox IKGA" adalah tingkat nitrogen oksida dalam gas kiln, yang dapat memengaruhi efisiensi pembakaran dan tingkat FCaOX.
-"Suhu Calciner" adalah suhu di dalam kalsinator, yang memengaruhi dekomposisi kalsium karbonat dan tingkat FCaOX.
-"LSF" adalah Faktor Saturasi Kapur, yang menunjukkan jumlah kapur yang tersedia untuk reaksi dan memengaruhi tingkat FCaOX.
+- Delta positif = rekomendasi lebih tinggi dari kondisi saat ini; negatif = lebih rendah.
+- "Torsi Motor Kiln": torsi motor, beban kiln -> memengaruhi FCaOX.
+- "Arus Motor Kiln": arus motor, energi masuk -> memengaruhi reaksi kimia dan FCaOX.
+- "Nox IKGA": nitrogen oksida gas kiln -> efisiensi pembakaran dan FCaOX.
+- "Suhu Calciner": suhu kalsinator -> dekomposisi CaCO3 dan FCaOX.
+- "LSF": Lime Saturation Factor -> jumlah kapur tersedia dan FCaOX.
 
 Jaga agar penjelasan tetap ringkas dan teknis.
 """
-
     response = client.chat.completions.create(
         model="default",
         messages=[{"role": "user", "content": prompt}]
     )
-
     return response.choices[0].message.content
 
 
@@ -318,78 +282,31 @@ Jaga agar penjelasan tetap ringkas dan teknis.
 # BATCH PREDICTION
 # ============================================================
 def run_batch_prediction(step1_df, scaler, scale_cols, model_inc, model_abs):
-    df = step1_df.copy()
-    df["LSF_lag1"] = df["LSF"].shift(1)
+    df               = step1_df.copy()
+    df["LSF_lag1"]   = df["LSF"].shift(1)
     df["FCaOX_lag1"] = df["FCaOX"].shift(1)
 
     results = []
-
     for _, row in df.iterrows():
         if pd.isna(row["LSF_lag1"]) or pd.isna(row["FCaOX_lag1"]):
             continue
-
         X = pd.DataFrame([row[scale_cols]])
         if X.isnull().any().any():
             continue
-
-        Xs = scaler.transform(X)
+        Xs       = scaler.transform(X)
         inc_pred = model_inc.predict(Xs)[0]
-
-        abs_input = pd.DataFrame([{
+        abs_pred = model_abs.predict(pd.DataFrame([{
             "FCaOX_Inc_pred": inc_pred,
-            "FCaOX_lag1": row["FCaOX_lag1"]
-        }])
-        abs_pred = model_abs.predict(abs_input)[0]
-
+            "FCaOX_lag1":     row["FCaOX_lag1"]
+        }]))[0]
         results.append({
-            "time": row.iloc[0],
-            "FCaOX_pred": abs_pred,
-            "FCaOX_actual": row["FCaOX_lag1"],
+            "time":           row.iloc[0],
+            "FCaOX_pred":     abs_pred,
+            "FCaOX_actual":   row["FCaOX_lag1"],
             "FCaOX Accuracy": abs_pred - row["FCaOX_lag1"]
         })
 
     return pd.DataFrame(results)
-
-
-def render_prediction_result(result, show_rerun_button=False):
-    """Render chart, status cards, and download button for prediction result."""
-    st.line_chart(result[["FCaOX_pred", "FCaOX_actual"]])
-
-    st.subheader("📊 FCaOX Status Terkini")
-
-    last_actual_val = result["FCaOX_actual"].dropna().iloc[-1] if not result["FCaOX_actual"].dropna().empty else None
-    last_pred_val   = result["FCaOX_pred"].dropna().iloc[-1]   if not result["FCaOX_pred"].dropna().empty   else None
-
-    act_label, act_color, act_emoji = get_fcaox_status(last_actual_val)
-    pred_label, pred_color, pred_emoji = get_fcaox_status(last_pred_val)
-
-    card_col1, card_col2, card_col3 = st.columns([2, 2, 1])
-
-    with card_col1:
-        render_fcaox_card("FCaOX Sekarang (Aktual)", last_actual_val, act_label, act_color, act_emoji)
-
-    with card_col2:
-        render_fcaox_card("FCaOX Prediksi", last_pred_val, pred_label, pred_color, pred_emoji)
-
-    with card_col3:
-        st.markdown(
-            """
-            <div style="background:#1a1a2e; border-radius:12px; padding:16px;
-                        font-size:12px; color:#ccc; line-height:1.8;">
-                <b style="color:#fff;">Keterangan</b><br>
-                <span style="color:#2ECC71;">■</span> 0.6 – 1.5 : Normal<br>
-                <span style="color:#FF6B35;">■</span> &lt; 0.6 : Overburn<br>
-                <span style="color:#E74C3C;">■</span> &gt; 1.5 : FCaOX Tinggi
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.download_button(
-        "Download Prediction",
-        result.to_csv(index=False),
-        "prediction.csv"
-    )
 
 
 # ============================================================
@@ -398,7 +315,7 @@ def render_prediction_result(result, show_rerun_button=False):
 st.title("🔥 Kiln FCaOX Prediction System")
 
 # ============================================================
-# NAVIGATION RADIO  ← ini yang diminta berfungsi
+# NAVIGATION RADIO
 # ============================================================
 page = st.radio(
     "Navigasi",
@@ -410,9 +327,10 @@ page = st.radio(
 st.divider()
 
 # ============================================================
-# SHARED: LOAD DATA (dibutuhkan kedua halaman)
+# SHARED: LOAD DATA
 # ============================================================
 df = load_kiln_sheet()
+
 
 # ============================================================
 # PAGE: PREPROCESSING DATA
@@ -421,7 +339,6 @@ if page == "Preprocessing Data":
 
     st.header("🛠️ Preprocessing Data")
 
-    # --- Load Raw Data ---
     st.subheader("📥 Load Data Google Sheet")
     st.success(f"Data loaded : {len(df):,} rows")
 
@@ -431,7 +348,6 @@ if page == "Preprocessing Data":
     with st.expander("Dtype Check"):
         st.write(df.dtypes)
 
-    # --- Load Preprocessor ---
     st.subheader("⚙️ Load Window Preprocessor")
     preprocessor_path = "window_preprocessor.joblib"
 
@@ -442,7 +358,6 @@ if page == "Preprocessing Data":
         st.error(f"Preprocessor error : {e}")
         st.stop()
 
-    # --- Rolling Window Processing ---
     st.subheader("⚙️ Processing Step-1 (Rolling Window)")
 
     try:
@@ -453,14 +368,13 @@ if page == "Preprocessing Data":
         st.error(f"Processing error : {e}")
         st.stop()
 
-    # --- Step-1 Output ---
     st.subheader("📋 Step-1 Output")
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Rows", len(step1))
-    col2.metric("Columns", len(step1.columns))
-    col3.metric("FCaOX Inc valid", step1["FCaOX_Inc"].notna().sum())
-    col4.metric("FCaOX valid", step1["FCaOX"].notna().sum())
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Rows",            len(step1))
+    c2.metric("Columns",         len(step1.columns))
+    c3.metric("FCaOX Inc valid", step1["FCaOX_Inc"].notna().sum())
+    c4.metric("FCaOX valid",     step1["FCaOX"].notna().sum())
 
     with st.expander("Preview Step-1 Data"):
         st.dataframe(step1.head(50), use_container_width=True)
@@ -483,17 +397,15 @@ elif page == "Dashboard":
 
     st.header("📊 Dashboard")
 
-    # Pastikan step1 tersedia (load jika belum ada di session_state)
+    # ── Pastikan step1 tersedia ──────────────────────────────
     if "step1_df" not in st.session_state:
         st.info("Menjalankan preprocessing otomatis...")
-
         preprocessor_path = "window_preprocessor.joblib"
         try:
             window_preprocessor = joblib.load(preprocessor_path)
         except Exception as e:
             st.error(f"Preprocessor error : {e}")
             st.stop()
-
         try:
             step1 = run_rolling_window(df, window_preprocessor)
             st.session_state["step1_df"] = step1
@@ -503,7 +415,7 @@ elif page == "Dashboard":
     else:
         step1 = st.session_state["step1_df"]
 
-    # --- Load Models ---
+    # ── Load models (silent) ─────────────────────────────────
     try:
         bundle     = joblib.load("scaler_process_lsf.joblib")
         scaler     = bundle["scaler"]
@@ -514,73 +426,74 @@ elif page == "Dashboard":
         st.warning(f"Model load failed : {e}")
         st.stop()
 
-    # --- Batch Prediction (dalam expander) ---
-    with st.expander("🔮 Prediction", expanded=True):
+    # ── Hitung prediction (cache session) ───────────────────
+    if "prediction_result" not in st.session_state:
+        result = run_batch_prediction(step1, scaler, scale_cols, model_inc, model_abs)
+        st.session_state["prediction_result"] = result
+    else:
+        result = st.session_state["prediction_result"]
 
-        st.success("Models loaded")
+    # ==========================================================
+    # TAMPIL UTAMA 1 — Line chart + Status Cards
+    # ==========================================================
+    st.line_chart(result[["FCaOX_pred", "FCaOX_actual"]])
+
+    st.subheader("📊 FCaOX Status Terkini")
+
+    last_actual_val = result["FCaOX_actual"].dropna().iloc[-1] if not result["FCaOX_actual"].dropna().empty else None
+    last_pred_val   = result["FCaOX_pred"].dropna().iloc[-1]   if not result["FCaOX_pred"].dropna().empty   else None
+
+    act_label,  act_color,  act_emoji  = get_fcaox_status(last_actual_val)
+    pred_label, pred_color, pred_emoji = get_fcaox_status(last_pred_val)
+
+    card_col1, card_col2, card_col3 = st.columns([2, 2, 1])
+    with card_col1:
+        render_fcaox_card("FCaOX Sekarang (Aktual)", last_actual_val, act_label,  act_color,  act_emoji)
+    with card_col2:
+        render_fcaox_card("FCaOX Prediksi",          last_pred_val,   pred_label, pred_color, pred_emoji)
+    with card_col3:
         st.markdown(
-            "model scaler : `scaler_process_lsf.joblib`  \n"
-            "model increment : `xgb_fcaox_increment.joblib`  \n"
-            "model absolute : `fcao_abs_model.joblib`"
+            """
+            <div style="background:#1a1a2e;border-radius:12px;padding:16px;
+                        font-size:12px;color:#ccc;line-height:1.8;">
+                <b style="color:#fff;">Keterangan</b><br>
+                <span style="color:#2ECC71;">&#9632;</span> 0.6 &ndash; 1.5 : Normal<br>
+                <span style="color:#FF6B35;">&#9632;</span> &lt; 0.6 : Overburn<br>
+                <span style="color:#E74C3C;">&#9632;</span> &gt; 1.5 : FCaOX Tinggi
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-        if st.button("Re-Run Batch Prediction"):
-            result = run_batch_prediction(step1, scaler, scale_cols, model_inc, model_abs)
-            st.session_state["prediction_result"] = result
-            st.dataframe(result, use_container_width=True)
-            render_prediction_result(result)
-        else:
-            # Tampilkan hasil otomatis atau dari cache
-            if "prediction_result" in st.session_state:
-                result = st.session_state["prediction_result"]
-            else:
-                result = run_batch_prediction(step1, scaler, scale_cols, model_inc, model_abs)
-                st.session_state["prediction_result"] = result
+    st.divider()
 
-            result_sorted = result.sort_values("time", ascending=False).reset_index(drop=True)
-            st.dataframe(result_sorted, use_container_width=True, height=200)
-            render_prediction_result(result)
-
-    # --- Prescriptive Control ---
+    # ==========================================================
+    # TAMPIL UTAMA 2 — Prescriptive Control Recommendation
+    # ==========================================================
     st.subheader("🧠 Prescriptive Control Recommendation")
 
     last_actual_fcaox = step1["FCaOX"].dropna().iloc[-1]
 
     delta_target = st.number_input(
         "Δ Target FCaOX (relative to last actual)",
-        min_value=-1.0,
-        max_value=1.0,
-        value=0.10,
-        step=0.05
+        min_value=-1.0, max_value=1.0, value=0.10, step=0.05
     )
 
     target = last_actual_fcaox + delta_target
-
-    st.info(
-        f"Last Actual FCaOX : {round(last_actual_fcaox, 3)} → Target FCaOX : {round(target, 3)}"
-    )
+    st.info(f"Last Actual FCaOX : {round(last_actual_fcaox, 3)} → Target FCaOX : {round(target, 3)}")
 
     if st.button("Generate Recommendation"):
-        last_row = step1.iloc[-1]
+        last_row      = step1.iloc[-1]
+        time_col      = step1.columns[0]
+        data_time_str = pd.to_datetime(last_row[time_col]).strftime("%Y-%m-%d %H:%M")
 
-        time_col = step1.columns[0]
-        data_time = last_row[time_col]
-        data_time_str = pd.to_datetime(data_time).strftime("%Y-%m-%d %H:%M")
-
-        rec = prescribe_control(
-            last_row,
-            scaler,
-            scale_cols,
-            model_inc,
-            model_abs,
-            target,
-            step1
-        )
+        rec = prescribe_control(last_row, scaler, scale_cols, model_inc, model_abs, target, step1)
 
         st.success("Recommendation generated")
-        st.metric("Data Timestamp", str(data_time_str))
-        st.metric("Last Actual FCaOX", round(last_actual_fcaox, 3))
-        st.metric("Target FCaOX", round(target, 3))
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Data Timestamp",    data_time_str)
+        m2.metric("Last Actual FCaOX", round(last_actual_fcaox, 3))
+        m3.metric("Target FCaOX",      round(target, 3))
 
         st.dataframe(rec, use_container_width=True)
 
@@ -588,7 +501,34 @@ elif page == "Dashboard":
         st.subheader("AI Process Explanation")
         st.write(explanation)
 
-    # --- Refresh ---
+    st.divider()
+
+    # ==========================================================
+    # TERSEMBUNYI DEFAULT — Detail tabel prediksi & Re-Run
+    # ==========================================================
+    with st.expander("🔮 Detail Prediction & Re-Run", expanded=False):
+
+        st.caption(
+            "model scaler : `scaler_process_lsf.joblib` | "
+            "model increment : `xgb_fcaox_increment.joblib` | "
+            "model absolute : `fcao_abs_model.joblib`"
+        )
+
+        if st.button("Re-Run Batch Prediction"):
+            result = run_batch_prediction(step1, scaler, scale_cols, model_inc, model_abs)
+            st.session_state["prediction_result"] = result
+            st.rerun()
+
+        result_sorted = result.sort_values("time", ascending=False).reset_index(drop=True)
+        st.dataframe(result_sorted, use_container_width=True, height=250)
+
+        st.download_button(
+            "⬇️ Download Prediction CSV",
+            result.to_csv(index=False),
+            "prediction.csv"
+        )
+
+    # ── Refresh ──────────────────────────────────────────────
     if st.button("🔄 Refresh Page"):
         st.cache_data.clear()
         st.session_state.pop("step1_df", None)
