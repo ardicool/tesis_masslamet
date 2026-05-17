@@ -438,6 +438,52 @@ elif page == "Dashboard":
     # ==========================================================
     st.line_chart(result[["FCaOX_pred", "FCaOX_actual"]])
 
+    #create new subheader in cards with laters column of Start Time	Torsi Motor Kiln	Arus Motor Kiln	Nox IKGA	Suhu Calciner	LSF, from GSHEET_URL 
+    st.subheader("📊 Parameter Terkini")
+    last_row = df.dropna(subset=["Start Time", "Torsi Motor Kiln", "Arus Motor Kiln", "Nox IKGA", "Suhu Calciner", "LSF"]).iloc[-1]
+    #pisah perparameter dengan baris baru, buat 6 kolom untuk masing-masing parameter, dan tampilkan dengan st.metric
+    #atur tampilan st.metric dengan warna yang berbeda untuk masing-masing parameter, misalnya Torsi Motor Kiln dengan warna biru, Arus Motor Kiln dengan warna hijau, Nox IKGA dengan warna orange, Suhu Calciner dengan warna merah, dan LSF dengan warna ungu
+    #berikan nilai delta berdasarkan selisih antara nilai terakhir dengan nilai sebelumnya, dan tampilkan delta tersebut di st.metric dengan warna hijau jika positif dan merah jika negatif
+    param_col1, param_col2, param_col3, param_col4, param_col5, param_col6 = st.columns(6)
+    #start time tidak usah ada delta
+
+    with param_col1:
+        last_val = last_row["Start Time"]
+        prev_val = df["Start Time"].dropna().iloc[-2] if df["Start Time"].dropna().shape[0] > 1 else None
+        delta_str = "N/A"
+        st.metric("Start Time", last_val.strftime("%Y-%m-%d %H:%M"))
+    with param_col2:
+        last_val = last_row["Torsi Motor Kiln"]
+        prev_val = df["Torsi Motor Kiln"].dropna().iloc[-2] if df["Torsi Motor Kiln"].dropna().shape[0] > 1 else None
+        delta    = last_val - prev_val if prev_val is not None else None
+        delta_str = f"{delta:.2f}" if delta is not None else "N/A"
+        st.metric("Torsi Motor Kiln", round(last_val, 2), delta_str)
+    with param_col3:
+        last_val = last_row["Arus Motor Kiln"]
+        prev_val = df["Arus Motor Kiln"].dropna().iloc[-2] if df["Arus Motor Kiln"].dropna().shape[0] > 1 else None
+        delta    = last_val - prev_val if prev_val is not None else None
+        delta_str = f"{delta:.2f}" if delta is not None else "N/A"
+        st.metric("Arus Motor Kiln", round(last_val, 2), delta_str)
+    with param_col4:
+        last_val = last_row["Nox IKGA"]
+        prev_val = df["Nox IKGA"].dropna().iloc[-2] if df["Nox IKGA"].dropna().shape[0] > 1 else None
+        delta    = last_val - prev_val if prev_val is not None else None
+        delta_str = f"{delta:.2f}" if delta is not None else "N/A"
+        st.metric("Nox IKGA", round(last_val, 2), delta_str)
+    with param_col5:
+        last_val = last_row["Suhu Calciner"]
+        prev_val = df["Suhu Calciner"].dropna().iloc[-2] if df["Suhu Calciner"].dropna().shape[0] > 1 else None
+        delta    = last_val - prev_val if prev_val is not None else None
+        delta_str = f"{delta:.2f}" if delta is not None else "N/A"
+        st.metric("Suhu Calciner", round(last_val, 2), delta_str)
+    with param_col6:
+        last_val = last_row["LSF"]
+        #untuk prev_val cari nilai  LSF yang tidak sama dengan last_val, karena LSF seringkali tidak berubah dalam beberapa baris, jadi kita cari nilai sebelumnya yang berbeda dengan last_val
+        prev_val = df["LSF"].dropna().loc[df["LSF"].dropna() != last_val].iloc[-1] if df["LSF"].dropna().loc[df["LSF"].dropna() != last_val].shape[0] > 0 else None
+        delta    = last_val - prev_val if prev_val is not None else None
+        delta_str = f"{delta:.2f}" if delta is not None else "N/A"
+        st.metric("LSF", round(last_val, 2), delta_str)
+
     st.subheader("📊 FCaOX Status Terkini")
 
     last_actual_val = result["FCaOX_actual"].dropna().iloc[-1] if not result["FCaOX_actual"].dropna().empty else None
